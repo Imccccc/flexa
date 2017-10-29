@@ -31,9 +31,6 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 	this -> problem_solver = problem_solver;
 	time_flag = 1; elapsed_time = 0; iterations = 0;
 	communication_time = 0; initialization_time = 0;  
-	
-	// Synchronizing processes
-	MPI_Barrier(MPI_COMM_WORLD);
 
 	// Read data
 		// Useful variable creation
@@ -49,37 +46,36 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		if (rank == 0) printf("DONE \n");
 		file.close();
 		n = 2*Ky*Kx*t;
-		Ky_local = Ky/size;  
-		n_local = n/size;
 		// Read random sampling mask
-		mask = new int[n_local/2];
+		mask = new int[n/2];
 		strcpy(data_path,data_directory.c_str()); strcat(data_path,"/mask.dat");
 		if (rank == 0) printf("[ALL] reading random sampling mask: ");
 		file.open(data_path);
 		if (!file && rank == 0) { std::cout << "ERROR" << std::endl; throw std::exception(); }
-		nnz_local = 0; p = 0; int temp; for (int i = 0; i < n/2; i++) { if (i >= rank*(n_local/2) && i < (rank+1)*(n_local/2)) { file >> mask[p]; p += 1; if(mask[p-1] == 1) nnz_local += 2; } else file >> bin; }
+		nnz = 0; p = 0; 
+		int temp; 
+		for (int i = 0; i < n/2; i++) { if (i >= rank*(n/2) && i < (rank+1)*(n/2)) { file >> mask[p]; p += 1; if(mask[p-1] == 1) n += 2; } else file >> bin; }
 		if (rank==0) printf("DONE \n");
 		file.close();	
 		// Read Kx-Ky-t domain data
-		image = new double[n_local];
+		image = new double[n];
 		strcpy(data_path,data_directory.c_str()); strcat(data_path,"/data_kx_ky_t.dat");
 		if (verbose && rank == 0) printf("[ALL] reading kx-ky-t domain image: ");
 		file.open(data_path);
 		if (!file && rank == 0) { std::cout << "ERROR" << std::endl; throw std::exception(); }
-		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n_local/2) && i < (rank+1)*(n_local/2)){ file >> image[p]; file >> image[p+1]; p += 2; } else{ file >> bin; file >> bin; } } 
+		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n/2) && i < (rank+1)*(n/2)){ file >> image[p]; file >> image[p+1]; p += 2; } else{ file >> bin; file >> bin; } } 
 		if (verbose && rank == 0) printf("DONE \n");
 		file.close();
 		// Read x-y-f domain data
-		reference_image = new double[n_local];
+		reference_image = new double[n];
 		strcpy(data_path,data_directory.c_str()); strcat(data_path,"/data_x_y_f.dat");
 		if (verbose && rank == 0) printf("[ALL] reading x-y-f domain reference image: ");
 		file.open(data_path);
 		if (!file && rank == 0) { std::cout << "ERROR" << std::endl; throw std::exception(); }
-		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n_local/2) && i < (rank+1)*(n_local/2)){ file >> reference_image[p]; file >> reference_image[p+1]; p += 2; } else{ file >> bin; file >> bin; } }
+		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n/2) && i < (rank+1)*(/2)){ file >> reference_image[p]; file >> reference_image[p+1]; p += 2; } else{ file >> bin; file >> bin; } }
 		if (verbose && rank == 0) printf("DONE \n");
 		file.close();		
 
-    /*
 	// Initialize Fast Fourier Transforms
 		// FFTs dimensions setting
 		MKL_LONG stride_Kx[2]; stride_Kx[0] = 0; stride_Kx[1] = t;
@@ -87,7 +83,7 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		MKL_LONG stride_t[2]; stride_t[0] = 0; stride_t[1] = 1;	
 		int number_of_transforms_Kx = t;
 		int number_of_transforms_Ky = t*Kx;
-		int number_of_transforms_t = Kx*Ky_local;
+		int number_of_transforms_t = Kx*Ky;
 		int input_distance_Kx = 1;
 		int input_distance_Ky = 1;
 		int input_distance_t = t;
@@ -118,21 +114,11 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		status_Kx = DftiCommitDescriptor(dft_descriptor_handle_Kx);
 		status_Ky = DftiCommitDescriptor(dft_descriptor_handle_Ky);
 		status_t = DftiCommitDescriptor(dft_descriptor_handle_t);
-    */
 
 	// Compute total number of samples in the Kx-Ky-t domain
-	MPI_Barrier(MPI_COMM_WORLD);
-	double communication_begin = MPI_Wtime();
-	MPI_Allreduce(&nnz_local, &nnz, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-	communication_time += (MPI_Wtime() - communication_begin);
-	
+	nnz = nnz	
 	// Compute MSE normalizing factor
-	double normalizing_factor_local = 0;
-	for (int i = 0; i < n_local; i++) normalizing_factor_local = normalizing_factor_local + reference_image[i]*reference_image[i]; 
-	MPI_Barrier(MPI_COMM_WORLD);
-	communication_begin = MPI_Wtime();
-	MPI_Allreduce(&normalizing_factor_local, &normalizing_factor, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-	communication_time += (MPI_Wtime() - communication_begin);
+	for (int i = 0; i < n; i++) normalizing_factor = normalizing_factor + reference_image[i]*reference_image[i]; 
 		
 }
 	
@@ -153,7 +139,7 @@ MRI::~MRI(){
 void MRI::apply_mask(double *input, double *output){
 	
 	int p = 0;
-	for (int i = 0; i < n_local/2; i++){
+	for (int i = 0; i < n/2; i++){
 		if (mask[i]==1) {
 			output[p] = input[2*i];
 			output[p+1] = input[2*i+1];
@@ -166,7 +152,7 @@ void MRI::apply_mask(double *input, double *output){
 void MRI::zero_filling(double *input, double *output){
 
 	int p = 0;
-	for (int i = 0; i < n_local/2; i++){
+	for (int i = 0; i < n/2; i++){
 		if (mask[i]) {
 			output[2*i] = input[p];
 			output[2*i+1] = input[p+1];
@@ -181,69 +167,46 @@ void MRI::zero_filling(double *input, double *output){
 }
 
 void MRI::compute_F(double *x){	
-	double *x_temp = new double [n_local];
-	x_temp[0:n_local:1] = x[0:n_local:1];  
-	status_t = DftiComputeBackward(dft_descriptor_handle_t, (std::complex<double>*)x_temp);	
-	for (int i = 0; i < Ky_local; i++) status_Kx = DftiComputeForward(dft_descriptor_handle_Kx, (std::complex<double>*)(x_temp+2*i*Kx*t));
-	MPI_Barrier(MPI_COMM_WORLD);
-	double communication_begin = MPI_Wtime();
-	MPI_Allgather(x_temp, n_local, MPI_DOUBLE, y_big, n_local, MPI_DOUBLE, MPI_COMM_WORLD);
-	communication_time += (MPI_Wtime() - communication_begin);
+	y_big[0:n:1] = x[0:n:1];  
+	status_t = DftiComputeBackward(dft_descriptor_handle_t, (std::complex<double>*)y_big);	
+	for (int i = 0; i < Ky; i++) status_Kx = DftiComputeForward(dft_descriptor_handle_Kx, (std::complex<double>*)(y_big+2*i*Kx*t));
 	status_Ky = DftiComputeForward(dft_descriptor_handle_Ky, (std::complex<double>*)y_big);
-	y_zf[0:n_local:1] = y_big[rank*n_local:n_local:1];
+	y_zf[0:n:1] = y_big[rank*n:n:1];
 	apply_mask(y_zf, y);
-	F[0:nnz_local:1] = y[0:nnz_local:1] - b[0:nnz_local:1]; 
-	delete [] x_temp;
+	F[0:nnz:1] = y[0:nnz:1] - b[0:nnz:1]; 
 }
 
 void MRI::compute_function_gradient(){
-	double *y_temp = new double [n_local]; zero_filling(F,y_temp);
-	status_t = DftiComputeForward(dft_descriptor_handle_t, (std::complex<double>*)y_temp);	
-	for (int i = 0; i < Ky_local; i++) status_Kx = DftiComputeBackward(dft_descriptor_handle_Kx, (std::complex<double>*)(y_temp+2*i*Kx*t));
-	MPI_Barrier(MPI_COMM_WORLD);
-	double communication_begin = MPI_Wtime();
-	MPI_Allgather(y_temp, n_local, MPI_DOUBLE, y_big, n_local, MPI_DOUBLE, MPI_COMM_WORLD);
-	communication_time += (MPI_Wtime() - communication_begin);
+	zero_filling(F,y_big);
+	status_t = DftiComputeForward(dft_descriptor_handle_t, (std::complex<double>*)y_big);	
+	for (int i = 0; i < Ky; i++) status_Kx = DftiComputeBackward(dft_descriptor_handle_Kx, (std::complex<double>*)(y_big+2*i*Kx*t));
 	status_Ky = DftiComputeBackward(dft_descriptor_handle_Ky, (std::complex<double>*)y_big);
-	nablaF[0:n_local:1] = y_big[rank*n_local:n_local:1]; 
-	delete [] y_temp;		
+	nablaF[0:n:1] = y_big[rank*n:n:1]; 
 }
 
 double MRI::compute_function_value(double *x){	
-	double regularization_term_local = 0; double value_local = 0; double value;
-	for (int i = 0; i < nnz_local; i++) value_local = value_local + F[i]*F[i]; value_local *= 0.5;
-	for (int i = 0; i < n_local; i++) regularization_term_local = regularization_term_local + std::abs(x[i]);
-		regularization_term_local *= lambda;
-	value_local = value_local + regularization_term_local; 
-	MPI_Barrier(MPI_COMM_WORLD);
-	double communication_begin = MPI_Wtime();
-	MPI_Allreduce(&value_local, &value, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD); 
-	communication_time += (MPI_Wtime() - communication_begin);
+	double regularization_term = 0; double value;
+	for (int i = 0; i < nnz; i++) value = value+ F[i]*F[i]; value *= 0.5;
+	for (int i = 0; i < n; i++) regularization_term = regularization_term + std::abs(x[i]);
+		regularization_term *= lambda;
+	value = value + regularization_term; 
 	return value;
 }
 
 double MRI::compute_merit_value(int merit_function){
-	
-	double merit_local = 0; double merit;
+	double merit;
 	if (merit_function == 0){
-		for (int i = 0; i < n_local; i++) merit_local = merit_local + ((t/std::sqrt(Kx*Ky*t))*x[i] - reference_image[i])*((t/std::sqrt(Kx*Ky*t))*x[i] - reference_image[i]); 
-		double communication_begin = MPI_Wtime();
-		MPI_Allreduce(&merit_local, &merit, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD); 
-		communication_time += (MPI_Wtime() - communication_begin);
+		for (int i = 0; i < n; i++) merit = merit + ((t/std::sqrt(Kx*Ky*t))*x[i] - reference_image[i])*((t/std::sqrt(Kx*Ky*t))*x[i] - reference_image[i]); 
 		merit /= normalizing_factor;
 		}
 	else{
-		for (int i = 0; i < n_local; i++) {
+		for (int i = 0; i < n; i++) {
 			double Fi = nablaF[i] - x[i];	
 			if (Fi >= lambda) Fi = lambda;
 			if (Fi <= -lambda) Fi = -lambda;
 			double distance = std::abs(nablaF[i]-Fi);
-			merit_local = std::max(merit_local, distance);
+			merit = std::max(merit, distance);
 			}
-		MPI_Barrier(MPI_COMM_WORLD);
-		double communication_begin = MPI_Wtime();
-		MPI_Allreduce(&merit_local, &merit, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); 
-		communication_time += (MPI_Wtime() - communication_begin);
 		}
 	return merit;	
 		
@@ -255,98 +218,15 @@ void MRI::solve_subproblem_ST_J(double rho, double M_global, double gamma, doubl
 	double direction, xnew, Fnew;
 	
 	// Loop begin
-	for (int i = 0; i < n_local; i++) { 
+	for (int i = 0; i < n; i++) { 
 		if (std::abs(delta[i]) >= rho*M_global){ 
 			// Direction evaluation
 			direction = -delta[i];
-			// New point calculation (one block update strategy)
-			/*if (update_strategy && size > 1){ 
-				xnew = x[i] - gamma*direction;
-				for (int j = 0; j < m; j++) {
-					Fnew = F[j] + A[j+i*m]*(xnew - x[i]); 
-					F_value = F_value + 0.5*(Fnew*Fnew - F[j]*F[j]);
-					F[j] = Fnew;
-					}
-				*local_function_value = *local_function_value - std::abs(x[i]) + std::abs(xnew);
-				x[i] = xnew;
-				}*/
-			// New point calculation (all blocks update strategy)				
-			/*else*/ x[i] = x[i] - gamma*direction;	
+			x[i] = x[i] - gamma*direction;	
 			}
 		}
 		
 }
-
-void MRI::solve_subproblem_ST_GS(double rho, double M_global, double tau, double gamma, double *delta, int update_strategy, double *local_function_value){
-	
-	// Variables definition
-	int counter = 0; 
-	double direction, xopt, xnew, Fnew;
-	
-	// Random update pattern generation
-	int *indices = new int[n_local]; 
-	for (int i = 0; i < n_local; i++) indices[i] = i;
-	for (int i = 0; i < n_local; i++) {
-		int one = std::rand() % n_local;
-		int two = std::rand() % n_local;
-		int tmp = indices[one];
-		indices[one] = indices[two];
-		indices[two] = tmp;
-		}
-	
-	// Active set selection
-	int *active_set = new int[n_local+1];
-	for (int q = 0; q < n_local; q++) {
-		int i = indices[q];
-		if (std::abs(delta[i]) >= rho*M_global) {active_set[counter] = i; counter ++; }
-		} active_set[counter] = -1;
-		
-	// Loop begin
-	for (int q = 0; q < counter; q++) {	
-		// Current index and next index selection
-		int i = active_set[q];
-		int next_index = active_set[q+1];
-		// Scalar sub-problem optimal solution		
-		xopt = x[i] - nablaF[i]/(1.0*nnz/n + tau);				
-		double parameter = lambda/(1.0*nnz/n + tau);	
-		if (xopt >= parameter) xopt -= parameter;
-		else { if (xopt <= -parameter) xopt += parameter; else xopt = 0; }	
-		// Direction evaluation
-	    direction = -(xopt - x[i]);
-		// New point calculation
-		xnew = x[i] - gamma*direction; 
-		if (next_index >= 0){
-			x[i] = xnew;	
-			compute_F(x);
-			compute_function_gradient();
-			/*nablaF[next_index] = 0;
-			for (int j = 0; j < m; j++){
-				if (update_strategy && size > 1){
-					Fnew = F[j] + A[j+i*m]*(xnew - x[i]); 
-					F_value = F_value + 0.5*(Fnew*Fnew - F[j]*F[j]);
-					F[j] = Fnew;
-					}
-				elseF[j] = F[j] + A[j+i*m]*(xnew - x[i]);
-				nablaF[next_index] = nablaF[next_index] + A[next_index*m+j]*F[j];
-				} */
-			}			
-		else{
-			/*if(size > 1 && update_strategy){
-				for (int j = 1; j < m; j++){
-					Fnew = F[j] + A[j+i*m]*(xnew - x[i]); 
-					F_value = F_value + 0.5*(Fnew*Fnew - F[j]*F[j]);
-					F[j] = Fnew;
-					}
-				}*/
-			}
-		//if (update_strategy && size > 1) *local_function_value = *local_function_value - std::abs(x[i]) + std::abs(xnew);
-		//x[i] = xnew;	
-		}
-
-	// Freeing memory
-	delete [] indices; delete [] active_set;
-		
-}	
 
 void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_time, int solver, int update_strategy, double tau, double gamma, double rho){	
 	
@@ -364,12 +244,12 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 	double communication_begin, initialization_begin;
 	int tau_increments = 0;	int tau_decrements = 0; int function_decrements = 0; 
 	if (rank == 0) { times = new double[max_iterations+1]; values = new double[max_iterations+1]; merits = new double[max_iterations+1]; mse = new double[max_iterations+1];}
-	y = new double[nnz_local]; y_zf = new double [n_local](); y_big = new double [n];
-	x = new double[n_local](); b = new double[nnz_local]; F = new double[nnz_local](); nablaF = new double[n_local](); 
-	double *x_old = new double[n_local]; double *delta = new double[n_local]; double function_value_old;
+	y = new double[nnz]; y_zf = new double [n](); y_big = new double [n];
+	x = new double[n](); b = new double[nnz]; F = new double[nnz](); nablaF = new double[n](); 
+	double *x_old = new double[n]; double *delta = new double[n]; double function_value_old;
 	initialization_begin = MPI_Wtime();
 	apply_mask(image, b);	
-	F[0:nnz_local:1] = -b[0:nnz_local:1];
+	F[0:nnz:1] = -b[0:nnz:1];
 	compute_function_gradient();
 	function_value = compute_function_value(x);
 	merit_value = compute_merit_value(1);
@@ -395,23 +275,19 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 	while (merit_value >= merit_tolerance && iterations < max_iterations && time_flag){
 		
 		// Memorizing actual point 
-		x_old[0:n_local:1] = x[0:n_local:1];  
+		x_old[0:n:1] = x[0:n:1];  
 		
 		// Solving scalars sub-problems with soft-tresholding for greedy variables selection	
-		double M_local = 0; double M_global; double xopt;		
-		for (int i = 0; i < n_local; i++) {
+		double M_global; double xopt;		
+		for (int i = 0; i < n; i++) {
 			xopt = x[i] - nablaF[i]/(1.0*nnz/n + tau);	
 			double parameter = lambda/(1.0*nnz/n + tau);
 			if (xopt >= parameter) xopt -= parameter;
 			else { if (xopt <= -parameter) xopt += parameter; else xopt = 0; }
 			delta[i] = xopt - x[i];
 			double distance = std::abs(xopt - x[i]);
-			if (distance > M_local) M_local = distance;
-			}	
-		MPI_Barrier(MPI_COMM_WORLD);
-		communication_begin = MPI_Wtime();
-		MPI_Allreduce(&M_local, &M_global, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-		communication_time += (MPI_Wtime() - communication_begin);
+			if (distance > M_global) M_global = distance;
+			}
 		
 		// Useful variables initialization for Single-Block-Update schemes
 		double local_function_value = 0; double min_function_value; 
@@ -419,17 +295,7 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 		
 		// Solving scalars sub-problems for direction evaluation
 		if (solver == 0) solve_subproblem_ST_J(rho, M_global, gamma, delta, update_strategy, &local_function_value);
-		if (solver == 1) solve_subproblem_ST_GS(rho, M_global, tau, gamma, delta, update_strategy, &local_function_value);
-		
-		// Variables update
-		if (update_strategy && size > 1){
-			local_function_value *= lambda; local_function_value += F_value;		
-			MPI_Barrier(MPI_COMM_WORLD);
-			communication_begin = MPI_Wtime();
-			MPI_Allreduce(&local_function_value, &min_function_value, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-			communication_time += (MPI_Wtime() - communication_begin);
-			if(local_function_value != min_function_value){	x[0:n_local:1] = x_old[0:n_local:1]; }
-			}
+
 		compute_F(x);
 		function_value = compute_function_value(x);		
 		iterations ++;
@@ -437,7 +303,7 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 		// Tau update and next loop useful computations
 		if (function_value >= function_value_old) {
 			function_decrements = 0; tau_increments++; tau /= tau_step;
-			x[0:n_local:1] = x_old[0:n_local:1];
+			x[0:n:1] = x_old[0:n:1];
 			compute_F(x);
 			compute_function_gradient();
 			} 
@@ -461,9 +327,7 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 		if (rank == 0 && verbose) std::cout << "Iteration: " << iterations << "  Value: " << function_value << "  Merit: " << merit_value << std::endl;
 		
 		// Time flag setting
-		if (rank == 0 && (MPI_Wtime() - start_time) >= max_time) { time_flag = 0; }
-		MPI_Bcast(&time_flag, 1, MPI_INT, 0, MPI_COMM_WORLD); 
-		
+		if (rank == 0 && (MPI_Wtime() - start_time) >= max_time) { time_flag = 0; }		
 		}
 	
 	// Timing end
@@ -475,8 +339,8 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
 	if(rank == 0) std::cout << "Elapsed time: " << std::scientific << std::setprecision(6) << elapsed_time << std::endl;
 	
 	// Save last reconstructed image
-	MPI_Allgather(x, n_local, MPI_DOUBLE, y_big, n_local, MPI_DOUBLE, MPI_COMM_WORLD);
-		
+	y_big[0:n:1] = x[0:n:1];  
+
 	// Freeing memory
 	delete [] delta; delete [] x_old;
 	

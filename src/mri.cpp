@@ -47,6 +47,7 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		file.close();
 		n = 2*Ky*Kx*t;
 		// Read random sampling mask
+		printf("Begining reading Random Sampleing mask \n");
 		mask = new int[n/2];
 		strcpy(data_path,data_directory.c_str()); strcat(data_path,"/mask.dat");
 		if (rank == 0) printf("[ALL] reading random sampling mask: ");

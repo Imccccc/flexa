@@ -254,7 +254,8 @@ void MRI::solve_flexa(double merit_tolerance, int max_iterations, double max_tim
     function_value_old = function_value;
     initialization_time += (MPI_Wtime() - initialization_begin);
     if (solver == 1) srand(time(NULL));
-	
+	if (rank == 0) std::cout << "Init Vairables DONE" << size << std::endl;
+
     // Number of processes initialization time optimal function value printing out
     if (rank == 0) std::cout << "Number of parallel processes: " << size << std::endl;
 	if (rank == 0) std::cout << "Initialization time: " << std::scientific << std::setprecision(6) << initialization_time << std::endl;

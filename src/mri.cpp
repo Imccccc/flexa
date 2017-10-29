@@ -50,7 +50,7 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		printf("Beginning reading Random Sampleing mask \n");
 		mask = new int[n/2];
 		strcpy(data_path,data_directory.c_str()); 
-		std::cout << "data_path = " << data_path << std::endl
+		std::cout << "data_path = " << data_path << std::endl;
 		strcat(data_path,"/mask.dat");
 		if (rank == 0) printf("[ALL] reading random sampling mask: ");
 		file.open(data_path);

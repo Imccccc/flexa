@@ -72,7 +72,7 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		if (verbose && rank == 0) printf("[ALL] reading x-y-f domain reference image: ");
 		file.open(data_path);
 		if (!file && rank == 0) { std::cout << "ERROR" << std::endl; throw std::exception(); }
-		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n/2) && i < (rank+1)*(/2)){ file >> reference_image[p]; file >> reference_image[p+1]; p += 2; } else{ file >> bin; file >> bin; } }
+		p = 0; for (int i = 0; i < n/2; i++) { if (i >= rank*(n/2) && i < (rank+1)*(n/2)){ file >> reference_image[p]; file >> reference_image[p+1]; p += 2; } else{ file >> bin; file >> bin; } }
 		if (verbose && rank == 0) printf("DONE \n");
 		file.close();		
 
@@ -114,9 +114,6 @@ MRI::MRI(int rank, int size, std::string data_directory, double lambda, bool ver
 		status_Kx = DftiCommitDescriptor(dft_descriptor_handle_Kx);
 		status_Ky = DftiCommitDescriptor(dft_descriptor_handle_Ky);
 		status_t = DftiCommitDescriptor(dft_descriptor_handle_t);
-
-	// Compute total number of samples in the Kx-Ky-t domain
-	nnz = nnz	
 	// Compute MSE normalizing factor
 	for (int i = 0; i < n; i++) normalizing_factor = normalizing_factor + reference_image[i]*reference_image[i]; 
 		
